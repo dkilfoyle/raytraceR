@@ -164,17 +164,24 @@ tst = function() {
   world$addEntity(Sphere$new(center=c(0,-100.5,-1), radius=100))
 
   for (j in 1:bmp$height) {
+    if (j %% 10 == 0) {
+      cat("Row ", j, "\n")
+      bmp$plot()
+    }
     for (i in 1:bmp$width) {
-      u = i/bmp$width
-      v = j/bmp$height
-      ray = camera$getEyeRay(u, v)
-      
-      wc = world$collide(ray, 0.0, 1000000000)
-      if (wc$hit == T) {
-        bmp$setPixel(i,j, 0.5*(wc$normal+1))
+      col = c(0,0,0)
+      for (s in 1:10) {
+        u = (i - runif(1,max=0.9)) / bmp$width
+        v = (j - runif(1,max=0.9)) / bmp$height
+        ray = camera$getEyeRay(u, v)
+        wc = world$collide(ray, 0.0, 1000000000)
+        if (wc$hit == T) {
+          col = col + (0.5*(wc$normal+1))
+        }
+        else
+          col = col + camera$getBackgroundColor(ray)
       }
-      else
-        bmp$setPixel(i,j, camera$getBackgroundColor(ray))
+      bmp$setPixel(i, j, col/10)
     }
   }
   
