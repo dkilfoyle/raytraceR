@@ -2,6 +2,10 @@ library(R6)
 library(assertthat)
 library(ggplot2)
 
+unit_vector = function(v) {
+  return ( v / sqrt(v %*% v))
+}
+
 Bitmap = R6Class("Bitmap",
   public = list(
     width = NULL,
@@ -46,7 +50,10 @@ Ray = R6Class("Ray",
       self$origin = origin
       self$direction = direction
     },
-    getLength = function() { return( sqrt(self$direction %*% self$direction)) }
+    getLength = function() { return( sqrt(self$direction %*% self$direction)) },
+    point_at_parameter = function(t) {
+      return (self$origin + (self$direction * t))
+    }
   )
 )
 
@@ -63,8 +70,11 @@ Sphere = R6Class("Sphere",
       a = ray$direction %*% ray$direction # x^2 + y^2 + z^2
       b= 2.0 * (oc %*% ray$direction)
       c = (oc %*% oc) - self$radius * self$radius
-      discriminant = b * b - 4 * a* c
-      return(discriminant>0)
+      discriminant = b*b - 4*a*c
+      if (discriminant<0)
+        return(-1.0)
+      else
+        return( (-b - sqrt(discriminant)) / (2.0*a))
     }
   ))
 
@@ -110,8 +120,11 @@ tst = function() {
       u = i/bmp$width
       v = j/bmp$height
       ray = camera$getEyeRay(u, v)
-      if (sphere$intersects_ray(ray)) {
-        bmp$setPixel(i,j,c(1,0,0))
+      
+      t = sphere$intersects_ray(ray)
+      if (t > 0.0) {
+        normal = unit_vector(ray$point_at_parameter(t) - sphere$center)
+        bmp$setPixel(i,j, 0.5*(normal+1))
       }
       else
         bmp$setPixel(i,j, camera$getBackgroundColor(ray))
