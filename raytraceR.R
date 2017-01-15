@@ -65,18 +65,38 @@ Sphere = R6Class("Sphere",
       self$center = center
       self$radius = radius
     },
-    intersects_ray = function(ray) {
+    intersects_ray = function(ray, t_min, t_max) {
       oc = ray$origin - self$center
       a = ray$direction %*% ray$direction # x^2 + y^2 + z^2
-      b= 2.0 * (oc %*% ray$direction)
+      b = oc %*% ray$direction
       c = (oc %*% oc) - self$radius * self$radius
-      discriminant = b*b - 4*a*c
-      if (discriminant<0)
-        return(-1.0)
-      else
-        return( (-b - sqrt(discriminant)) / (2.0*a))
+      discriminant = b*b - a*c
+      if (discriminant > 0) {
+        temp = (-b - sqrt(discriminant)) / a
+        if (temp < t_max & temp > t_min) {
+          p = ray$point_at_parameter(temp)
+          return(list(
+            hit=T,
+            t = temp,
+            p = p,
+            normal = (p - self$center) / self$radius
+          ))
+        }
+        temp = (-b + sqrt(discriminant)) / a
+        if (temp < t_max & temp > t_min) {
+          p = ray$point_at_parameter(temp)
+          return(list(
+            hit=T,
+            t=temp,
+            p=p,
+            normal = (p - self$center) / self$radius
+          ))
+        }
+      }
+      return(list(hit=F))
     }
-  ))
+  )
+)
 
 Camera = R6Class("Camera",
   public = list(
@@ -105,6 +125,31 @@ Camera = R6Class("Camera",
   )
 )
 
+World = R6Class("World",
+  public = list(
+    entities = c(),
+    initialize = function() {},
+    addEntity = function(entity) {
+      self$entities = c(self$entities, entity)
+      return(invisible(self))
+    },
+    collide = function(ray, t_min, t_max) {
+      hit_anything = F
+      closest_so_far = t_max
+      result = list(hit=F)
+      for (i in 1:length(self$entities)) {
+        collide_result = self$entities[[i]]$intersects_ray(ray, t_min, closest_so_far)
+        if (collide_result$hit == T) {
+          hit_anything = T
+          closest_so_far = collide_result$t
+          result = collide_result
+        }
+      }
+      return(result)
+    }
+  )
+)
+
 tst = function() {
   camera = Camera$new(
     origin = c(0,0,0),
@@ -113,7 +158,10 @@ tst = function() {
     vertical=c(0,2,0))
   
   bmp = Bitmap$new(width=200, height=100)
-  sphere = Sphere$new(center=c(0,0,-1), radius=0.5)
+  
+  world = World$new()
+  world$addEntity(Sphere$new(center=c(0,0,-1), radius=0.5))
+  world$addEntity(Sphere$new(center=c(0,-100.5,-1), radius=100))
 
   for (j in 1:bmp$height) {
     for (i in 1:bmp$width) {
@@ -121,10 +169,9 @@ tst = function() {
       v = j/bmp$height
       ray = camera$getEyeRay(u, v)
       
-      t = sphere$intersects_ray(ray)
-      if (t > 0.0) {
-        normal = unit_vector(ray$point_at_parameter(t) - sphere$center)
-        bmp$setPixel(i,j, 0.5*(normal+1))
+      wc = world$collide(ray, 0.0, 1000000000)
+      if (wc$hit == T) {
+        bmp$setPixel(i,j, 0.5*(wc$normal+1))
       }
       else
         bmp$setPixel(i,j, camera$getBackgroundColor(ray))
