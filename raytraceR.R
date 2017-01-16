@@ -6,6 +6,19 @@ unit_vector = function(v) {
   return ( v / sqrt(v %*% v))
 }
 
+get_squared_length = function(v) {
+  return(v %*% v)
+}
+
+random_in_unit_sphere = function() {
+  repeat {
+    p = (2.0 * runif(3)) - c(1,1,1)
+    if (get_squared_length(p) < 1.0)
+      break
+  }
+  return(p)
+}
+
 Bitmap = R6Class("Bitmap",
   public = list(
     width = NULL,
@@ -116,11 +129,6 @@ Camera = R6Class("Camera",
         origin=self$origin,
         direction = self$lower_left_corner + (u*self$horizontal) + (v*self$vertical)
       ))
-    },
-    getBackgroundColor = function(ray) {
-      unit.direction = ray$direction / ray$getLength()
-      t = 0.5 * (unit.direction[2] + 1.0)
-      return( (1.0-t) * c(1,1,1) + (t*c(0.5,0.7,1.0)) )
     }
   )
 )
@@ -146,6 +154,20 @@ World = R6Class("World",
         }
       }
       return(result)
+    },
+    color = function(ray) {
+      wc = self$collide(ray, 0.0, 1000000000)
+      if (wc$hit==T) {
+        # produce a target within a unit sphere sitting tangent to the hitpoint
+        target = wc$p + wc$normal + random_in_unit_sphere()
+        # recursively bounce a ray from the hit point out through the target
+        return(0.5 * self$color(Ray$new(origin=wc$p, direction=target-wc$p)))
+      }
+      else {
+        unit.direction = ray$direction / ray$getLength()
+        t = 0.5 * (unit.direction[2] + 1.0)
+        return( (1.0-t) * c(1,1,1) + (t*c(0.5,0.7,1.0)) )
+      }
     }
   )
 )
@@ -174,12 +196,7 @@ tst = function() {
         u = (i - runif(1,max=0.9)) / bmp$width
         v = (j - runif(1,max=0.9)) / bmp$height
         ray = camera$getEyeRay(u, v)
-        wc = world$collide(ray, 0.0, 1000000000)
-        if (wc$hit == T) {
-          col = col + (0.5*(wc$normal+1))
-        }
-        else
-          col = col + camera$getBackgroundColor(ray)
+        col = col + world$color(ray)
       }
       bmp$setPixel(i, j, col/10)
     }
