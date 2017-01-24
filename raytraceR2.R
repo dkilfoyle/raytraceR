@@ -102,29 +102,12 @@ Sphere = R6Class("Sphere",
       self$radius2 = radius * radius
     },
     
-    intersects_ray = function(origin, direction, t_min, t_max) {
-      oc = origin - self$center
-      a = direction %*% direction # x^2 + y^2 + z^2
-      b = oc %*% direction
-      c = (oc %*% oc) - self$radius2
-      discriminant = b*b - a*c
-      if (discriminant > 0) {
-        temp = (-b - sqrt(discriminant)) / a
-        if (temp < t_max & temp > t_min) {
-          p = origin + (direction * temp)
-          return(list(
-            hit=T,
-            t = temp,
-            p = p,
-            normal = (p - self$center) / self$radius
-          ))
-        }
-      }
-      return(list(hit=F))
-    },
-    
     intersects_rays = function(origins, directions, tmaxs) {
-      oc = sweep(origins, 2, self$center, '-') # oc = origin-self$center
+      if (is.vector(origins)) {
+        oc = matrix(origins-self$center, nrow=nrow(directions), ncol=3, byrow=T)
+        origins = matrix(origins, nrow=nrow(directions), ncol=3, byrow=T)
+      } else
+        oc = sweep(origins, 2, self$center, '-') # oc = origin-self$center
       a = rowSums(directions * directions) # direction %*% direction # x^2 + y^2 + z^2
       b = rowSums(oc * directions) #oc %*% direction
       c = rowSums(oc * oc) - self$radius2 # (oc %*% oc) - self$radius * self$radius
@@ -163,44 +146,6 @@ World = R6Class("World",
       return(invisible(self))
     },
     
-    collide = function(origin, direction, t_min, t_max) {
-      hit_anything = F
-      closest_so_far = t_max
-      result = list(hit=F)
-      
-      for (i in 1:length(self$entities)) {
-        collide_result = self$entities[[i]]$intersects_ray(origin, direction, t_min, closest_so_far)
-        if (collide_result$hit == T) {
-          hit_anything = T
-          closest_so_far = collide_result$t
-          result = collide_result
-        }
-      }
-      
-      return(result)
-    },
-    
-    color = function(direction, origin) {
-      self$counter = self$counter + 1
-      if (self$counter %% 10000 == 0) cat(self$counter,"\n")
-      
-      wc = self$collide(origin, direction, 0.001, 1000000000)
-      
-      if (wc$hit==T) {
-        # produce a target within a unit sphere sitting tangent to the hitpoint
-        # target = wc$p + wc$normal + rius[(self$counter %% nrow(rius)) + 1, ]
-        target = wc$p + wc$normal + rius[runif(1,min=1,max=nrow(rius)), ]
-        
-        # recursively bounce a ray from the hit point out through the target
-        return(0.5 * self$color(direction = target-wc$p, origin = wc$p))
-      }
-      else {
-        unit.direction = direction / sqrt(direction %*% direction) 
-        t = 0.5 * (unit.direction[2] + 1.0)
-        return( (1.0-t) * c(1,1,1) + (t*c(0.5,0.7,1.0)) )
-      }
-    },
-    
     getClosestCollision = function(origins, directions) {
       
       tmax = rep(1000000, nrow(directions))
@@ -222,7 +167,7 @@ World = R6Class("World",
     color2 = function(origins, directions, level=1) {
       
       if (length(directions)==3) directions = t(directions)
-      if (length(origins)==3) origins=matrix(origins,nrow=nrow(directions), ncol=3, byrow=T)
+
       res = self$getClosestCollision(origins, directions)
       hits = which(res$ids != -1)
       
@@ -233,7 +178,6 @@ World = R6Class("World",
         targets = res$p[hits,] + res$n[hits,] + rius[runif(length(hits),min=1,max=nrow(rius)), ]
         # colors[hits, ] = 0.5 * (res$n[hits,] + c(1,1,1))
         colors[hits, ] = 0.5 * self$color2(origins = res$p[hits,], directions=targets, level=level+1)
-        # browser(condition=any(is.na(colors)))
         
         nohits = (1:nrow(directions))[-hits]
       }
@@ -273,11 +217,13 @@ tst = function() {
   u = (1:bmp$width) / bmp$width
   uv = expand.grid(u=u,v=v)
   
+  nsamples = 100
+  
   cols = t(apply(uv, 1, function(uvp) {
     # produce 100 rays through u,v with jiggle
-    eyerays = matrix(camera$lower_left_corner, nrow=50, ncol=3, byrow=T) +
-      (uvp[1] - (runif(50)/bmp$width)) %*% t(camera$horizontal) +
-      (uvp[2] - (runif(50)/bmp$height)) %*% t(camera$vertical)
+    eyerays = matrix(camera$lower_left_corner, nrow=nsamples, ncol=3, byrow=T) +
+      (uvp[1] - (runif(nsamples)/bmp$width)) %*% t(camera$horizontal) +
+      (uvp[2] - (runif(nsamples)/bmp$height)) %*% t(camera$vertical)
     
     return(colMeans(world$color2(camera$origin, eyerays)))
   }))
