@@ -17,15 +17,6 @@ random_in_unit_sphere = function(n) {
 
 rius = random_in_unit_sphere(5000)
 
-# random_in_unit_sphere = function() {  
-#   repeat {
-#     p = (2.0 * runif(3)) - c(1,1,1)
-#     if (get_squared_length(p) < 1.0)
-#       break
-#   }
-#   return(p)
-# }
-
 Bitmap = R6Class("Bitmap",
   public = list(
     width = NULL,
@@ -103,16 +94,19 @@ Sphere = R6Class("Sphere",
   public = list(
     center = NULL,
     radius = NULL,
+    radius2 = NULL,
+    id = NULL,
     initialize = function(center = c(0,0,0), radius=1.0) {
       self$center = center
       self$radius = radius
+      self$radius2 = radius * radius
     },
     
     intersects_ray = function(origin, direction, t_min, t_max) {
       oc = origin - self$center
       a = direction %*% direction # x^2 + y^2 + z^2
       b = oc %*% direction
-      c = (oc %*% oc) - self$radius * self$radius
+      c = (oc %*% oc) - self$radius2
       discriminant = b*b - a*c
       if (discriminant > 0) {
         temp = (-b - sqrt(discriminant)) / a
@@ -125,18 +119,34 @@ Sphere = R6Class("Sphere",
             normal = (p - self$center) / self$radius
           ))
         }
-        temp = (-b + sqrt(discriminant)) / a
-        if (temp < t_max & temp > t_min) {
-          p = origin + (direction * temp)
-          return(list(
-            hit=T,
-            t=temp,
-            p=p,
-            normal = (p - self$center) / self$radius
-          ))
-        }
       }
       return(list(hit=F))
+    },
+    
+    intersects_rays = function(origins, directions, tmaxs) {
+      oc = sweep(origins, 2, self$center, '-') # oc = origin-self$center
+      a = rowSums(directions * directions) # direction %*% direction # x^2 + y^2 + z^2
+      b = rowSums(oc * directions) #oc %*% direction
+      c = rowSums(oc * oc) - self$radius2 # (oc %*% oc) - self$radius * self$radius
+      discriminants = b*b - a*c
+      
+      hits = which(discriminants > 0)
+      dist = sqrt(discriminants[hits])
+      dist = (-b[hits] - dist) / a[hits]
+      
+      pass = which(dist > 0.001 & dist < tmaxs[hits])
+      
+      dist = dist[pass]
+      hits = hits[pass]
+
+      if (length(hits)>0) {
+        p = origins[hits,] + (directions[hits,] * dist)
+        if(length(p)==3) p=t(p) # only single hit point, convert vector to single row matrix
+        n  = sweep(p,2,self$center,'-') / self$radius
+        return(list(hits = hits, dist=dist, p=p, n=n))
+      }
+      else
+        return(list(hits=c(),dist=c(),p=c(),n=c()))
     }
   )
 )
@@ -148,6 +158,7 @@ World = R6Class("World",
     initialize = function() {},
     
     addEntity = function(entity) {
+      entity$id = length(self$entities) + 1
       self$entities = c(self$entities, entity)
       return(invisible(self))
     },
@@ -188,6 +199,58 @@ World = R6Class("World",
         t = 0.5 * (unit.direction[2] + 1.0)
         return( (1.0-t) * c(1,1,1) + (t*c(0.5,0.7,1.0)) )
       }
+    },
+    
+    getClosestCollision = function(origins, directions) {
+      
+      tmax = rep(1000000, nrow(directions))
+      ids = rep(-1, nrow(directions))
+      p = matrix(0, nrow=nrow(directions), ncol=3)
+      n = matrix(0, nrow=nrow(directions), ncol=3)
+
+      for (i in 1:length(self$entities)) {
+        hits = self$entities[[i]]$intersects_rays(origins, directions, tmax)
+        tmax[hits$hits] = hits$dist
+        ids[hits$hits] = i
+        p[hits$hits, ] = hits$p
+        n[hits$hits, ] = hits$n
+      }
+      
+      return(list(ids=ids, dist=tmax, p=p, n=n))
+    },
+    
+    color2 = function(origins, directions, level=1) {
+      
+      if (length(directions)==3) directions = t(directions)
+      if (length(origins==3)) origins=matrix(origins,nrow=nrow(directions), ncol=3, byrow=T)
+      res = self$getClosestCollision(origins, directions)
+      hits = which(res$ids != -1)
+      
+      colors = matrix(0, nrow=nrow(directions), ncol=3)
+      
+      # for hit points generate a bounce target jiggled off the normal
+      if (length(hits)>0) {
+        targets = res$p[hits,] + res$n[hits,] + rius[runif(length(hits),min=1,max=nrow(rius)), ]
+        colors[hits, ] = 0.5 * (res$n[hits,] + c(1,1,1))
+        # colors[hits, ] = 0.5 * self$color2(origins = res$p[hits,], directions=targets, level=level+1)
+        # browser(condition=any(is.na(colors)))
+        
+        nohits = (1:nrow(directions))[-hits]
+      }
+      else
+        nohits = 1:nrow(directions)
+      
+      # for not hit points calculate color from sky dome
+      if (length(nohits) > 0) {
+        nohitdirs = directions[nohits,]
+        if (length(nohitdirs)==3) nohitdirs = t(nohitdirs)
+        unit.dirs = nohitdirs / sqrt(rowSums(nohitdirs*nohitdirs))
+        t = 0.5 * (unit.dirs[,2] + 1.0)
+        x = 1.0-t
+        colors[nohits, ] = cbind(x+t*0.5, x+t*0.7, x+t)
+      }
+      
+      return(colors)
     }
   )
 )
@@ -199,62 +262,30 @@ tst = function() {
     horizontal = c(4,0,0),
     vertical=c(0,2,0))
   
-  bmp = Bitmap$new(width=100, height=50)
+  bmp = Bitmap$new(width=200, height=100)
   
   world = World$new()
   world$addEntity(Sphere$new(center=c(0,0,-1), radius=0.5))
-  world$addEntity(Sphere$new(center=c(0,-100.5,-1), radius=100))
+  # world$addEntity(Sphere$new(center=c(0,-100.5,-1), radius=100))
   
   # matrix of u,v pairs
   v = (1:bmp$height) / bmp$height
   u = (1:bmp$width) / bmp$width
   uv = expand.grid(u=u,v=v)
   
-  # # replicate matrix 10 times for 10 rays for each u,v
-  # uv = as.matrix(uv) %x% rep(1,10)
-  # 
-  # # # jiggle each uv
-  # uv[,1] = uv[,1] - (runif(nrow(uv)) / bmp$width)
-  # uv[,2] = uv[,2] - (runif(nrow(uv)) / bmp$height)
-  # 
-  # # generate camera directions from uv
-  # dirs = t(apply(uv, 1, function(uvp) return( camera$lower_left_corner + (uvp[1] * camera$horizontal) + (uvp[2] * camera$vertical) )))
-  # 
-  # cols = t(apply(dirs, 1, world$color, camera$origin))
-  # 
-  # bmp$pixels = aggregate(cols,list(rep(1:(nrow(cols)%/%10+1),each=10,len=nrow(cols))),mean)[-1];
-  # colnames(bmp$pixels) = c("R","G","B")
-  
-  # for each u,v point
   cols = t(apply(uv, 1, function(uvp) {
     # produce 100 rays through u,v with jiggle
+
     eyerays = matrix(camera$lower_left_corner, nrow=50, ncol=3, byrow=T) +
       (uvp[1] - (runif(50)/bmp$width)) %*% t(camera$horizontal) +
       (uvp[2] - (runif(50)/bmp$height)) %*% t(camera$vertical)
     
-    return(colMeans(t(apply(eyerays, 1, world$color, camera$origin))))
+    return(colMeans(world$color2(camera$origin, eyerays)))
   }))
 
   bmp$pixels = cols
   colnames(bmp$pixels) = c("R","G","B")
   
-  
   bmp$plot()
   
-  # for (j in 1:bmp$height) {
-  #   if (j %% 10 == 0) {
-  #     cat("Row ", j, "\n")tst
-  #     bmp$plot()
-  #   }
-  #   for (i in 1:bmp$width) {
-  #     col = c(0,0,0)
-  #     for (s in 1:10) {
-  #       u = (i - runif(1,max=0.9)) / bmp$width
-  #       v = (j - runif(1,max=0.9)) / bmp$height
-  #       ray = camera$getEyeRay(u, v)
-  #       col = col + world$color(ray)
-  #     }
-  #     bmp$setPixel(i, j, sqrt(col/10))
-  #   }
-  # }
 }
