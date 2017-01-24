@@ -222,7 +222,7 @@ World = R6Class("World",
     color2 = function(origins, directions, level=1) {
       
       if (length(directions)==3) directions = t(directions)
-      if (length(origins==3)) origins=matrix(origins,nrow=nrow(directions), ncol=3, byrow=T)
+      if (length(origins)==3) origins=matrix(origins,nrow=nrow(directions), ncol=3, byrow=T)
       res = self$getClosestCollision(origins, directions)
       hits = which(res$ids != -1)
       
@@ -231,8 +231,8 @@ World = R6Class("World",
       # for hit points generate a bounce target jiggled off the normal
       if (length(hits)>0) {
         targets = res$p[hits,] + res$n[hits,] + rius[runif(length(hits),min=1,max=nrow(rius)), ]
-        colors[hits, ] = 0.5 * (res$n[hits,] + c(1,1,1))
-        # colors[hits, ] = 0.5 * self$color2(origins = res$p[hits,], directions=targets, level=level+1)
+        # colors[hits, ] = 0.5 * (res$n[hits,] + c(1,1,1))
+        colors[hits, ] = 0.5 * self$color2(origins = res$p[hits,], directions=targets, level=level+1)
         # browser(condition=any(is.na(colors)))
         
         nohits = (1:nrow(directions))[-hits]
@@ -266,7 +266,7 @@ tst = function() {
   
   world = World$new()
   world$addEntity(Sphere$new(center=c(0,0,-1), radius=0.5))
-  # world$addEntity(Sphere$new(center=c(0,-100.5,-1), radius=100))
+  world$addEntity(Sphere$new(center=c(0,-100.5,-1), radius=100))
   
   # matrix of u,v pairs
   v = (1:bmp$height) / bmp$height
@@ -275,7 +275,6 @@ tst = function() {
   
   cols = t(apply(uv, 1, function(uvp) {
     # produce 100 rays through u,v with jiggle
-
     eyerays = matrix(camera$lower_left_corner, nrow=50, ncol=3, byrow=T) +
       (uvp[1] - (runif(50)/bmp$width)) %*% t(camera$horizontal) +
       (uvp[2] - (runif(50)/bmp$height)) %*% t(camera$vertical)
